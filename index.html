@@ -10,7 +10,8 @@
             display: flex;
             flex-direction: column;
             align-items: center;
-            background-color: #f0f0f0;
+            background-color: var(--tg-theme-bg-color, #f0f0f0);
+            color: var(--tg-theme-text-color, #000000);
         }
         #game-board {
             display: grid;
@@ -21,7 +22,7 @@
         .cell {
             width: 40px;
             height: 40px;
-            background-color: #ddd;
+            background-color: var(--tg-theme-secondary-bg-color, #ddd);
             display: flex;
             justify-content: center;
             align-items: center;
@@ -29,17 +30,17 @@
             cursor: pointer;
         }
         .cell.revealed {
-            background-color: #fff;
+            background-color: var(--tg-theme-bg-color, #fff);
         }
         .cell.mine {
             background-color: #ff4136;
         }
-        #reset-button {
+        #reset-button, #sendScoreButton {
             margin-top: 20px;
             padding: 10px 20px;
             font-size: 16px;
-            background-color: #0074D9;
-            color: white;
+            background-color: var(--tg-theme-button-color, #0074D9);
+            color: var(--tg-theme-button-text-color, white);
             border: none;
             border-radius: 5px;
             cursor: pointer;
