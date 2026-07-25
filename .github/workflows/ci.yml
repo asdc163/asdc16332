@@ -1,0 +1,32 @@
+name: CI
+
+# 排程是無人看管的，所以每次推送都先確認生產線還跑得動。
+on:
+  push:
+    branches-ignore: []
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: 安裝相依套件與中文字型
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq fonts-noto-cjk
+      - name: 煙霧測試
+        run: python -m unittest discover -s tests -v
+      - name: 離線產出一輪，確認 CLI 可用
+        run: |
+          python -m square generate --kind morning_brief --offline
+          python -m square generate --kind education --offline
+          python -m square generate --kind data_watch --offline
+          python -m square generate --kind weekly --offline
+          python -m square topics | head -5
