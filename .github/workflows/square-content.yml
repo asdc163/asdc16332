@@ -1,0 +1,152 @@
+name: 幣安廣場內容生產線
+
+# 排程時間為 UTC，換算成台北時間（UTC+8）如下：
+#   00:00 UTC = 08:00 台北   每天    早報
+#   04:30 UTC = 12:30 台北   一三五  教育系列
+#   13:00 UTC = 21:00 台北   二四六  數據觀察
+#   12:00 UTC = 20:00 台北   週日    週報
+#
+# 注意：GitHub 的排程只會在「預設分支」上觸發。這個 workflow 合併進 main
+# 之前不會自己跑。另外倉庫連續 60 天沒有活動，排程會被自動停用。
+on:
+  schedule:
+    - cron: "0 0 * * *"
+    - cron: "30 4 * * 1,3,5"
+    - cron: "0 13 * * 2,4,6"
+    - cron: "0 12 * * 0"
+  workflow_dispatch:
+    inputs:
+      kind:
+        description: "要產生的貼文型別（留空＝依今天的排程全部產生）"
+        required: false
+        type: choice
+        options: ["", "morning_brief", "education", "data_watch", "weekly"]
+        default: ""
+      offline:
+        description: "用離線示意資料（只測版面，不連幣安）"
+        required: false
+        type: boolean
+        default: false
+      dry_run:
+        description: "乾跑：產內容但不真的發到廣場"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: square-content
+  cancel-in-progress: false
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: 安裝相依套件與中文字型
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq fonts-noto-cjk
+
+      - name: 決定要產生的貼文型別
+        id: kind
+        env:
+          SCHEDULE: ${{ github.event.schedule }}
+          INPUT_KIND: ${{ inputs.kind }}
+        run: |
+          case "$SCHEDULE" in
+            "0 0 * * *")       KIND=morning_brief ;;
+            "30 4 * * 1,3,5")  KIND=education ;;
+            "0 13 * * 2,4,6")  KIND=data_watch ;;
+            "0 12 * * 0")      KIND=weekly ;;
+            *)                 KIND="$INPUT_KIND" ;;
+          esac
+          echo "kind=$KIND" >> "$GITHUB_OUTPUT"
+          echo "選定型別：${KIND:-（依今日排程）}"
+
+      - name: 產生貼文草稿與配圖
+        run: |
+          ARGS=""
+          [ -n "${{ steps.kind.outputs.kind }}" ] && ARGS="$ARGS --kind ${{ steps.kind.outputs.kind }}"
+          [ "${{ inputs.offline }}" = "true" ] && ARGS="$ARGS --offline"
+          python -m square generate $ARGS
+
+      # 沒設定 secret 時只產草稿不發布，讓生產線在金鑰就位前也能正常跑。
+      # 發布本身是冪等的：data/published.json 記過的貼文不會再送一次。
+      - name: 發布到幣安廣場
+        env:
+          BINANCE_SQUARE_OPENAPI_KEY: ${{ secrets.BINANCE_SQUARE_OPENAPI_KEY }}
+        run: |
+          if [ -z "$BINANCE_SQUARE_OPENAPI_KEY" ]; then
+            echo "::warning::未設定 BINANCE_SQUARE_OPENAPI_KEY，只產草稿不發布。"
+            echo "到 Settings → Secrets and variables → Actions 新增這個 secret 即可啟用自動發布。"
+            exit 0
+          fi
+          ARGS=""
+          [ -n "${{ steps.kind.outputs.kind }}" ] && ARGS="$ARGS --kind ${{ steps.kind.outputs.kind }}"
+          [ "${{ inputs.dry_run }}" = "true" ] && ARGS="$ARGS --dry-run"
+          python -m square publish $ARGS
+
+      - name: 把文案貼到 Actions 摘要頁
+        if: always()
+        run: |
+          DAY=$(TZ=Asia/Taipei date +%F)
+          DIR="out/$DAY"
+          {
+            echo "## $DAY 的貼文草稿"
+            echo
+            if [ -d "$DIR" ]; then
+              for f in "$DIR"/*.md; do
+                [ -e "$f" ] || continue
+                echo "### $(basename "$f")"
+                echo
+                echo '```'
+                sed '1,/^---$/d; 1,/^---$/d' "$f"
+                echo '```'
+                echo
+              done
+              echo "配圖在倉庫的 \`$DIR/\` 底下，或從下方 artifact 下載。"
+            else
+              echo "這次沒有產生任何檔案。"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: square-${{ github.run_id }}
+          path: out/
+          retention-days: 14
+          if-no-files-found: warn
+
+      # always()：就算發布步驟中途失敗，已經發出去的部分也必須把帳本推回去，
+      # 否則下一次排程會重發。
+      - name: 提交產出
+        if: always()
+        run: |
+          git config user.name "square-content-bot"
+          git config user.email "actions@github.com"
+          # data/ 一定要一起提交：published.json 是防重複發文的帳本，
+          # 沒跟著推回去，下一次排程就會把同一篇再發一次。
+          git add out/ data/
+          if git diff --staged --quiet; then
+            echo "沒有新產出，略過提交。"
+            exit 0
+          fi
+          git commit -m "chore(content): $(TZ=Asia/Taipei date +%F) 貼文與發布紀錄"
+          for i in 1 2 3 4; do
+            git push && break
+            echo "推送失敗，第 $i 次重試"
+            sleep $((2 ** i))
+            git pull --rebase
+          done

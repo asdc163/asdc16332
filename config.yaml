@@ -1,0 +1,60 @@
+## 幣安廣場內容生產線 — 設定檔
+## 這裡不放任何密鑰。所有資料來源都是幣安「公開」行情端點，不需要 API key。
+
+brand:
+  # 顯示在圖卡右下角的署名
+  handle: "OLXWWH6C"
+  # 你的廣場分享／推薦連結。要出現在貼文結尾時才會被帶入。
+  referral_url: "https://app.binance.com/uni-qr/cpro/smt_lab?l=zh-TW&r=OLXWWH6C&uc=app_square_share_link&us=copylink"
+  # 每篇貼文結尾是否附上推薦連結。廣場對推廣連結有規範，
+  # 建議只在教育／週報這類有實質內容的貼文附上，不要每篇都放。
+  referral_on: ["education", "weekly"]
+
+locale:
+  language: "zh-TW"
+  timezone: "Asia/Taipei"
+
+market:
+  # 主觀察名單，早報與圖卡用
+  watchlist: ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT"]
+  # 漲跌幅榜的最低 24h 成交額（USDT），濾掉沒有流動性的雜訊
+  min_quote_volume: 20000000
+  # 排除槓桿代幣與穩定幣對
+  exclude_patterns: ["UP", "DOWN", "BULL", "BEAR", "USDCUSDT", "FDUSDUSDT", "TUSDUSDT"]
+  gainers_count: 5
+
+schedule:
+  # 台北時間。GitHub Actions 的 cron 是 UTC，workflow 內已換算好。
+  # 這裡只是給人看的，改這裡不會改到實際排程。
+  morning_brief: "08:00"
+  education: "12:30"
+  data_watch: "21:00"
+  weekly_review: "週日 20:00"
+
+content:
+  # 每篇貼文的目標字數區間（中文字）
+  length_range: [180, 400]
+  hashtags_per_post: 3
+  # 固定加在所有貼文結尾的免責聲明。不要移除。
+  disclaimer: "以上為個人市場觀察與資料整理，不構成投資建議。加密資產波動大，請自行研究（DYOR）並控制風險。"
+
+publish:
+  # 管線正式上線的日期。每週檢視只會對這天之後的排程對帳，
+  # 否則第一份報告會把上線前的每一天都算成「漏發」。
+  live_since: "2026-07-27"
+
+  # 哪些型別要用「長文」格式發（contentType 2，帶標題與封面），
+  # 其餘一律用短貼文（contentType 1，正文＋最多 4 張圖）。
+  # 我們的文案長度偏短，預設全部走短貼文；想讓教育系列變成長文就填 ["education"]。
+  article_kinds: []
+
+output:
+  dir: "out"
+  # 產生的圖卡尺寸
+  card_size: [1080, 1080]
+  poster_size: [1080, 1350]
+
+goals:
+  # 用於追蹤表的目標，決定 `status` 指令的進度計算
+  weekly_revenue_usdt: 200
+  followers: 10000
