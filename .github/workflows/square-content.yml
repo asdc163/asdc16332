@@ -27,6 +27,11 @@ on:
         required: false
         type: boolean
         default: false
+      dry_run:
+        description: "乾跑：產內容但不真的發到廣場"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -76,6 +81,22 @@ jobs:
           [ "${{ inputs.offline }}" = "true" ] && ARGS="$ARGS --offline"
           python -m square generate $ARGS
 
+      # 沒設定 secret 時只產草稿不發布，讓生產線在金鑰就位前也能正常跑。
+      # 發布本身是冪等的：data/published.json 記過的貼文不會再送一次。
+      - name: 發布到幣安廣場
+        env:
+          BINANCE_SQUARE_OPENAPI_KEY: ${{ secrets.BINANCE_SQUARE_OPENAPI_KEY }}
+        run: |
+          if [ -z "$BINANCE_SQUARE_OPENAPI_KEY" ]; then
+            echo "::warning::未設定 BINANCE_SQUARE_OPENAPI_KEY，只產草稿不發布。"
+            echo "到 Settings → Secrets and variables → Actions 新增這個 secret 即可啟用自動發布。"
+            exit 0
+          fi
+          ARGS=""
+          [ -n "${{ steps.kind.outputs.kind }}" ] && ARGS="$ARGS --kind ${{ steps.kind.outputs.kind }}"
+          [ "${{ inputs.dry_run }}" = "true" ] && ARGS="$ARGS --dry-run"
+          python -m square publish $ARGS
+
       - name: 把文案貼到 Actions 摘要頁
         if: always()
         run: |
@@ -108,16 +129,21 @@ jobs:
           retention-days: 14
           if-no-files-found: warn
 
+      # always()：就算發布步驟中途失敗，已經發出去的部分也必須把帳本推回去，
+      # 否則下一次排程會重發。
       - name: 提交產出
+        if: always()
         run: |
           git config user.name "square-content-bot"
           git config user.email "actions@github.com"
-          git add out/
+          # data/ 一定要一起提交：published.json 是防重複發文的帳本，
+          # 沒跟著推回去，下一次排程就會把同一篇再發一次。
+          git add out/ data/
           if git diff --staged --quiet; then
             echo "沒有新產出，略過提交。"
             exit 0
           fi
-          git commit -m "chore(content): $(TZ=Asia/Taipei date +%F) 貼文草稿"
+          git commit -m "chore(content): $(TZ=Asia/Taipei date +%F) 貼文與發布紀錄"
           for i in 1 2 3 4; do
             git push && break
             echo "推送失敗，第 $i 次重試"
