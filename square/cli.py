@@ -19,7 +19,7 @@ import json
 import sys
 from pathlib import Path
 
-from . import compose, config, imagegen, ledger, market, publisher, topics, tracker
+from . import compose, config, imagegen, intake, ledger, market, publisher, review, topics, tracker
 
 
 def _snapshot(cfg, offline: bool):
@@ -217,6 +217,30 @@ def cmd_status(args, cfg) -> int:
     return 0
 
 
+def cmd_review(args, cfg) -> int:
+    day = dt.date.fromisoformat(args.date) if args.date else cfg.now().date()
+    report = review.build_report(cfg, day)
+    if args.out:
+        Path(args.out).write_text(report, encoding="utf-8")
+        print(f"報告已寫入 {args.out}")
+    else:
+        print(report)
+    return 0
+
+
+def cmd_intake(args, cfg) -> int:
+    """把一段自由文字（通常是 issue 留言）裡的數字寫進追蹤表。"""
+    text = args.text if args.text else sys.stdin.read()
+    values = intake.parse(text)
+    if not values:
+        print("沒有解析到任何數字，不寫入。", file=sys.stderr)
+        return 1
+    entry = intake.to_entry(cfg, text, date=args.date)
+    tracker.append(cfg, entry)
+    print(intake.summarise(values))
+    return 0
+
+
 def cmd_topics(args, cfg) -> int:
     today = cfg.now().date()
     current = compose.education_index(today)
@@ -270,6 +294,16 @@ def build_parser() -> argparse.ArgumentParser:
 
     c = sub.add_parser("topics", help="列出教育課綱")
     c.set_defaults(func=cmd_topics)
+
+    r = sub.add_parser("review", help="產生每週檢視報告")
+    r.add_argument("--date", help="以哪一天為週末，預設今天")
+    r.add_argument("--out", help="寫入檔案而不是印出來")
+    r.set_defaults(func=cmd_review)
+
+    i = sub.add_parser("intake", help="從自由文字解析成長數據並寫入追蹤表")
+    i.add_argument("--text", help="要解析的文字，省略則從 stdin 讀")
+    i.add_argument("--date", help="記在哪一天，預設今天")
+    i.set_defaults(func=cmd_intake)
     return p
 
 

@@ -29,7 +29,17 @@ python -m square publish              # 實際發布（需要金鑰）
 python -m square generate --publish   # 產生 + 發布，一步到位
 python -m square topics               # 看教育課綱與今天輪到第幾篇
 python -m square status               # 看目標進度與漏斗診斷
+python -m square review               # 產生每週檢視報告
 ```
+
+## 排程總覽
+
+| workflow | 何時 | 做什麼 |
+|---|---|---|
+| `square-content.yml` | 每天四個時段 | 產內容 → 發布 → 提交帳本 |
+| `weekly-review.yml` | 週日 21:30 | 開檢視 issue，附報告與數據回報樣板 |
+| `metrics-intake.yml` | 你回覆 issue 時 | 解析數字 → 寫進追蹤表 → 回覆確認 |
+| `ci.yml` | 每次推送 | 跑測試，確認管線沒被推壞 |
 
 產出會落在 `out/YYYY-MM-DD/`，每篇一個 `.md`（含 YAML front matter）加一張 `.png`。
 
@@ -48,17 +58,51 @@ python -m square status               # 看目標進度與漏斗診斷
 
 ## 每天你要做的事
 
-理論上：沒有。管線自己跑完。
+沒有。管線自己產、自己發、自己記帳。
 
-實際上建議每週看一次 Actions 的執行摘要（文案會貼在裡面），
-並把後台數字記一筆，這樣 `status` 才算得出漏斗轉換率：
+**每週要做的事只有一件：回一則留言。**
+每週日 21:30 系統會自動開一則「每週檢視」issue，裡面有發布健康度、漏斗轉換率、
+以及依數據算出來的下一步。唯一需要你的地方是五個數字——
+廣場沒有開放統計 API，粉絲數與曝光只能從後台抄。
 
-```bash
-python -m square track --followers 1250 --impressions 8400 \
-       --clicks 96 --signups 4 --commission 23.5
+直接在那則 issue 底下回覆就好，寫法很寬鬆：
+
+```
+followers: 1250
+impressions: 8400
+clicks: 96
+signups: 4
+commission: 23.5
 ```
 
+或者中文自由書寫也行：`這週粉絲數 1250，曝光 8,400，進個人頁 96 次，註冊 4 個，返佣 23.5 USDT`。
+系統會解析、寫進 `data/tracking.csv`、回覆確認。
+順序不拘、少填幾項也可以，沒填的欄位不會被當成 0 猜進去。
+
 （`posts_published` 由發布流程自動記入，不用手填。）
+
+## 每週檢視在看什麼
+
+`python -m square review` 也可以隨時手動跑。報告分兩塊，性質不同所以分開講：
+
+**發布健康度**（全自動，來自 `data/published.json`）
+對帳「這週應該發 14 篇、實際發了幾篇」，列出漏發的日期與型別。
+內容再好沒發出去都是零，所以這一項排在最前面——管線壞掉時，
+報告的第一條建議一定是先修管線，不會跳過去談優化。
+
+**成長漏斗**（需要你回報）
+曝光 → 進個人頁 → 推薦註冊 → 返佣，每層算轉換率，
+然後指出**最弱的那一環**並給出具體動作。判斷邏輯大致是：
+
+| 症狀 | 診斷 | 動作 |
+|---|---|---|
+| 每篇曝光 < 300 | 觸及不足 | 熱門標籤、留言互動、固定發文時間 |
+| 曝光→點擊 < 1% | 鉤子不夠 | 貼文結尾放續集預告、改寫個人簡介 |
+| 有點擊、0 註冊 | 動線斷了 | 連結要放個人簡介與置頂，不能只埋在貼文結尾 |
+| 點擊→註冊 < 2% | CTA 太模糊 | 給具體理由、減少帶連結的貼文比例 |
+| 粉絲零成長 | 題材不對 | 拉高教育系列比重、壓低行情快報 |
+
+沒有數據時報告會直說「無法診斷」並要求補數字，**不會拿沒有的數字硬湊結論**。
 
 ## 用到的幣安 API
 
@@ -74,7 +118,7 @@ python -m square track --followers 1250 --impressions 8400 \
 
 標頭 `X-Square-OpenAPI-Key` / `clienttype: binanceSkill`，成功碼 `000000`。
 `contentType` 1＝短貼文（正文＋最多 4 張圖），2＝長文（標題＋單張封面）。
-每日上限 100 篇貼文、400 次上傳；我們一週 11 篇，用不到 2%。
+每日上限 100 篇貼文、400 次上傳；我們一週 14 篇，用不到 2%。
 
 行情資料另外走**免金鑰**的公開端點（`api.binance.com/api/v3/*`、
 `fapi.binance.com/fapi/v1/premiumIndex`），與廣場金鑰無關。
@@ -90,7 +134,7 @@ python -m square track --followers 1250 --impressions 8400 \
 | 21:00 | 二 / 四 / 六 | `data_watch` | 漲跌幅榜（已濾低流動性）、資金費率 |
 | 20:00 | 週日 | `weekly` | 一週回顧、本週講過的主題 |
 
-一週 11 篇。要調整就改 workflow 裡的 cron 與 `square/compose.py` 的 `kinds_for()`。
+一週 14 篇（早報 7 + 教育 3 + 數據 3 + 週報 1）。要調整就改 workflow 裡的 cron 與 `square/compose.py` 的 `kinds_for()`。
 
 > **兩個 GitHub 的坑**
 > 1. 排程只在**預設分支**上觸發。這個 workflow 合併進 `main` 之前不會自己跑。
@@ -135,9 +179,11 @@ square/
   imagegen.py   PIL 配圖，四種版型，不需要任何外部繪圖 API
   publisher.py  廣場 Creator OpenAPI 客戶端（圖片上傳 + 發文）
   ledger.py     發布帳本，防止重複發文
+  review.py     每週檢視：發布對帳、漏斗分析、策略建議
+  intake.py     從 issue 留言解析成長數據
   tracker.py    成長追蹤與漏斗診斷
   cli.py        指令列進入點
-tests/          煙霧測試、內容合規檢查、發布路徑測試
+tests/          煙霧測試、內容合規檢查、發布路徑測試、檢視邏輯測試
 config.yaml     品牌、觀察名單、排程、目標
 data/           追蹤表 + 發布帳本
 out/            產出（由排程 commit）
